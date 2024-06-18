@@ -25,7 +25,7 @@ install.packages(c("phyloseq", "RColorBrewer", "ggplot2", "microeco", "pheatmap"
 Update the paths to the data files in the script to match your local setup. After updating the file paths, you can run the script in an R environment to perform the analysis.
 
 ## Demo
-The code uses previously published packages for all analyses. Install times and run times vary by package and analysis, but range from seconds to hours on a standard desktop computer. For assistant running code or for more information on specific analyses, please feel free to contact the authors.
+The code uses previously published packages for all analyses. Install times and run times vary by package and analysis, but range from seconds to hours on a standard desktop computer. For assistance running code or for more information on specific analyses, please feel free to contact the authors.
 
 ## License
 This project is open source and available under the MIT License.
