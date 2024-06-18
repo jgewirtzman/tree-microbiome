@@ -1,4 +1,4 @@
-# Tree 16s Analysis
+# Tree Microbiome Analysis
 
 ## Overview
 This repository contains the R script `Tree_microbiome_all.R` designed for analyzing microbial communities within tree samples. The script utilizes a comprehensive suite of statistical and graphical packages in R to process, analyze, and visualize high-throughput sequencing data, focusing on ecological and microbiological insights.
