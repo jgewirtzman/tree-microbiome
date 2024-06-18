@@ -19,6 +19,8 @@ install.packages(c("phyloseq", "RColorBrewer", "ggplot2", "microeco", "pheatmap"
                    "ggpubr", "MicrobiotaProcess", "tidyr", "GUniFrac", "FEAST",
                    "dplyr", "umap", "phytools", "ape"))
 
+```
+
 ## Usage
 Update the paths to the data files in the script to match your local setup. After updating the file paths, you can run the script in an R environment to perform the analysis.
 
