@@ -89,7 +89,7 @@ ps.rare <- rarefy_even_depth(raw_ps, sample.size = 4000)
 # Filter only Inner & Outer samples
 ps.rare <- prune_samples(sample_data(ps.rare)$core_type %in% c("Inner", "Outer"), ps.rare)
 ps.rare <- prune_taxa(taxa_sums(ps.rare) > 0, ps.rare)
-ps.rare <- prune_taxa(taxa_sums(ps.rare) >= 2, ps.rare)
+ps.rare <- prune_taxa(taxa_sums(ps.rare) >= 10, ps.rare)
 ps.rare <- prune_taxa(rowSums(otu_table(ps.rare) > 0) >= 2, ps.rare)
 
 phyloseq_clean <- ps.rare  # The final cleaned phyloseq object
