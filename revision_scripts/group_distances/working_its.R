@@ -46,68 +46,70 @@ metadata_filtered <- data.frame(
 metadata_filtered <- subset(metadata_filtered, SampleType %in% c("Inner", "Outer"))
 rownames(metadata_filtered) <- metadata_filtered$SampleID
 
-
 # 1. Rename TreatmentGroup to core_type in samp_data
 colnames(samp_data)[colnames(samp_data) == "TreatmentGroup"] <- "core_type"
 
-# 3. Remove duplicate seq_id entries in both datasets
-#ddpcr <- ddpcr[!duplicated(ddpcr$seq_id), ]
-#samp_data <- samp_data[!duplicated(samp_data$seq_id), ]
-
-# 4. Remove rows with NA values in seq_id
+# Data preparation steps
 samp_data <- samp_data[!is.na(samp_data$seq_id), ]
-
-# 5. Ensure matching data types for merging
 ddpcr$seq_id <- as.character(ddpcr$seq_id)
 samp_data$seq_id <- as.character(samp_data$seq_id)
-
 ddpcr$core_type <- as.character(ddpcr$core_type)
 samp_data$core_type <- as.character(samp_data$core_type)
 
-# 6. Merge datasets by seq_id and core_type
-samp_data_merged <- merge(ddpcr, samp_data, by = c("seq_id", "core_type"), all.y = TRUE)
-
-# View merged data
-head(samp_data_merged)
-
+# Merge datasets
 samp_data_merged <- merge(ddpcr, samp_data, by = c("seq_id", "core_type"), all.y = TRUE)
 samp_data_merged <- merge(samp_data_merged, metadata_filtered, by.x = "RowName", by.y = "SampleID", all.x = TRUE)
 
 # Remove duplicates
 dups <- which(duplicated(samp_data_merged$RowName))
 samp_data_merged <- samp_data_merged[-c(dups), ]
-
-# Set row names
 row.names(samp_data_merged) <- samp_data_merged$RowName
 
-#### Construct Phyloseq Object ####
+#### Construct Initial Phyloseq Object ####
 raw_ps <- phyloseq(otu_table_pre, tax_tab_pre, phylo_tree, sample_data(samp_data_merged))
 
+#### Begin Filtering Pipeline ####
+# Initial state
+print(paste("Initial counts - Samples:", nsamples(raw_ps), "ASVs:", ntaxa(raw_ps)))
+
+# 1. Sample-level filtering
+# Filter Inner/Outer samples
+ps.filt <- prune_samples(sample_data(raw_ps)$core_type %in% c("Inner", "Outer"), raw_ps)
+print(paste("After Inner/Outer filtering - Samples:", nsamples(ps.filt), "ASVs:", ntaxa(ps.filt)))
+
+# Remove samples with insufficient reads
+min_reads <- 1000
+ps.filt <- prune_samples(sample_sums(ps.filt) >= min_reads, ps.filt)
+print(paste("After read depth filtering - Samples:", nsamples(ps.filt), "ASVs:", ntaxa(ps.filt)))
+
+# 2. Taxa-level filtering
+# Remove zero-abundance taxa
+ps.filt <- prune_taxa(taxa_sums(ps.filt) > 0, ps.filt)
+print(paste("After removing zero-abundance taxa - Samples:", nsamples(ps.filt), "ASVs:", ntaxa(ps.filt)))
+
+# Remove low abundance taxa (at least 3 reads total)
+ps.filt <- prune_taxa(taxa_sums(ps.filt) >= 3, ps.filt)
+print(paste("After abundance filtering - Samples:", nsamples(ps.filt), "ASVs:", ntaxa(ps.filt)))
+
+# Remove low prevalence taxa (present in at least 2 samples)
+ps.filt <- prune_taxa(rowSums(otu_table(ps.filt) > 0) >= 2, ps.filt)
+print(paste("After prevalence filtering - Samples:", nsamples(ps.filt), "ASVs:", ntaxa(ps.filt)))
+
+# 3. Perform rarefaction
 set.seed(46814)
-ps.rare <- rarefy_even_depth(raw_ps, sample.size = 4000)
+ps.rare <- rarefy_even_depth(ps.filt, sample.size = 4000)  
+print(paste("After rarefaction - Samples:", nsamples(ps.rare), "ASVs:", ntaxa(ps.rare)))
 
-# Filter only Inner & Outer samples
-ps.rare <- prune_samples(sample_data(ps.rare)$core_type %in% c("Inner", "Outer"), ps.rare)
-ps.rare <- prune_taxa(taxa_sums(ps.rare) > 0, ps.rare)
-ps.rare <- prune_taxa(taxa_sums(ps.rare) >= 10, ps.rare)
-ps.rare <- prune_taxa(rowSums(otu_table(ps.rare) > 0) >= 2, ps.rare)
-
-phyloseq_clean <- ps.rare  # The final cleaned phyloseq object
-
-# Ensure tree tips match the remaining OTUs
+# 4. Final tree pruning
 remaining_taxa <- taxa_names(ps.rare)
 ps.rare <- prune_taxa(remaining_taxa, ps.rare)
 pruned_tree <- prune_taxa(remaining_taxa, phy_tree(ps.rare))
 phy_tree(ps.rare) <- pruned_tree
-ps.rare <- prune_samples(sample_sums(ps.rare) > 0, ps.rare)
 
-# Define a minimum read count threshold (e.g., 1,000 reads per sample)
-min_reads <- 1000
-ps.rare <- prune_samples(sample_sums(ps.rare) >= min_reads, ps.rare)
-
+# Store final object
 phyloseq_clean <- ps.rare
-
 phyloseq_clean
+
 
 #### Calculate Distance Matrices ####
 wunifrac_dist_clean_ITS <- phyloseq::distance(phyloseq_clean, method = "wunifrac")
@@ -133,8 +135,6 @@ unifrac_matrix <- as.matrix(wunifrac_dist_clean_ITS)
 
 
 
-
-
 # List of distance matrices
 distance_matrices <- list(
   wunifrac = as.matrix(wunifrac_dist_clean_ITS),
@@ -144,12 +144,15 @@ distance_matrices <- list(
 
 # Function to process each distance matrix and generate heatmap & barplot
 analyze_distance_matrix <- function(dist_matrix, metric_name) {
-  
-  metadata_clean <- data.frame(sample_data(phyloseq_clean)) %>%
-    filter(!is.na(Species) & !is.na(SampleType))
-  
-  metadata_clean$Group <- paste(metadata_clean$Species, metadata_clean$SampleType, sep = "_")
-  group_names <- unique(metadata_clean$Group)
+  # Define comparison order
+  comparison_order <- c(
+    "Sapwood_Heartwood_Within",
+    "Sapwood_Sapwood_Within",
+    "Heartwood_Heartwood_Within",
+    "Sapwood_Heartwood_Between",
+    "Sapwood_Sapwood_Between",
+    "Heartwood_Heartwood_Between"
+  )
   
   # Convert distance matrix to long format
   dist_df <- as.data.frame(as.matrix(dist_matrix))
@@ -161,12 +164,11 @@ analyze_distance_matrix <- function(dist_matrix, metric_name) {
     left_join(metadata_clean, by = c("Sample1" = "RowName")) %>%
     rename(Species1 = Species, SampleType1 = SampleType) %>%
     left_join(metadata_clean, by = c("Sample2" = "RowName")) %>%
-    rename(Species2 = Species, SampleType2 = SampleType)
-  
-  # Define comparison groups
-  dist_long <- dist_long %>%
+    rename(Species2 = Species, SampleType2 = SampleType) %>%
     mutate(
-      Comparison = case_when(
+      Sample1 = factor(Sample1),
+      Sample2 = factor(Sample2),
+      Comparison = factor(case_when(
         Species1 == Species2 & SampleType1 == "Outer" & SampleType2 == "Inner" ~ "Sapwood_Heartwood_Within",
         Species1 == Species2 & SampleType1 == "Outer" & SampleType2 == "Outer" ~ "Sapwood_Sapwood_Within",
         Species1 == Species2 & SampleType1 == "Inner" & SampleType2 == "Inner" ~ "Heartwood_Heartwood_Within",
@@ -174,100 +176,67 @@ analyze_distance_matrix <- function(dist_matrix, metric_name) {
         Species1 != Species2 & SampleType1 == "Outer" & SampleType2 == "Outer" ~ "Sapwood_Sapwood_Between",
         Species1 != Species2 & SampleType1 == "Inner" & SampleType2 == "Inner" ~ "Heartwood_Heartwood_Between",
         TRUE ~ NA_character_
-      )
+      ), levels = comparison_order)
     ) %>%
     filter(!is.na(Comparison))
   
-  # Aggregate distances
-  group_means <- dist_long %>%
-    group_by(Comparison) %>%
-    summarise(
-      MeanDistance = mean(Distance, na.rm = TRUE),
-      SD = sd(Distance, na.rm = TRUE),
-      UniquePairs = n_distinct(pmap_chr(list(Sample1, Sample2), ~paste(sort(c(...)), collapse = "_"))),
-      .groups = "drop"
-    ) %>%
-    mutate(SE = SD / sqrt(UniquePairs))
+  # Fit mixed model
+  mixed_model <- lmer(Distance ~ Comparison + (1|Sample1) + (1|Sample2),
+                      data = dist_long)
+  print(summary(mixed_model))
   
-  # Perform ANOVA and Tukey's HSD only if there are enough comparisons
-  if (nrow(group_means) > 1) {
-    anova_model <- aov(Distance ~ Comparison, data = dist_long)
-    tukey_result <- TukeyHSD(anova_model)
-    tukey_letters <- multcompLetters4(anova_model, tukey_result, reversed=TRUE)
-    
-    if (!is.null(tukey_letters$Comparison)) {
-      group_letters <- data.frame(
-        Comparison = names(tukey_letters$Comparison$Letters),
-        Letters = tukey_letters$Comparison$Letters
-      )
-      group_means <- group_means %>%
-        left_join(group_letters, by = "Comparison")
-    } else {
-      group_means$Letters <- ""  # If no letters were generated, assign an empty string
-    }
-  } else {
-    group_means$Letters <- ""  # If ANOVA cannot be performed, assign empty letters
-  }
+  # Calculate EMMs
+  emm <- emmeans(mixed_model, specs = "Comparison")
   
-  # Ensure the correct order for comparisons
-  comparison_order <- c(
-    "Sapwood_Heartwood_Within",
-    "Sapwood_Sapwood_Within",
-    "Heartwood_Heartwood_Within",
-    "Sapwood_Heartwood_Between",
-    "Sapwood_Sapwood_Between",
-    "Heartwood_Heartwood_Between"
-  )
-  group_means$Comparison <- factor(group_means$Comparison, levels = comparison_order)
+  # Generate compact letter display
+  cld <- multcomp::cld(emm, 
+                       alpha = 0.05,
+                       adjust = "tukey",
+                       Letters = letters[1:6])
   
-  # Create a mapping for new x-axis labels (preserve 6 groups, just relabel)
+  # Prepare plot data
+  plot_data <- as.data.frame(cld) %>%
+    dplyr::select(Comparison, emmean, SE, .group) %>%
+    rename(Letters = .group)
+  
+  # Define comparison labels
   comparison_labels <- c(
-    "Sapwood_Heartwood_Within" = "Sapwood-Heartwood",
-    "Sapwood_Sapwood_Within" = "Sapwood-Sapwood",
-    "Heartwood_Heartwood_Within" = "Heartwood-Heartwood",
-    "Sapwood_Heartwood_Between" = "Sapwood-Heartwood",
-    "Sapwood_Sapwood_Between" = "Sapwood-Sapwood",
-    "Heartwood_Heartwood_Between" = "Heartwood-Heartwood"
+    "Sapwood_Heartwood_Within" = "Sapwood-\nHeartwood",
+    "Sapwood_Sapwood_Within" = "Sapwood-\nSapwood",
+    "Heartwood_Heartwood_Within" = "Heartwood-\nHeartwood",
+    "Sapwood_Heartwood_Between" = "Sapwood-\nHeartwood",
+    "Sapwood_Sapwood_Between" = "Sapwood-\nSapwood",
+    "Heartwood_Heartwood_Between" = "Heartwood-\nHeartwood"
   )
   
-  # Define the correct factor levels to preserve plotting order
-  comparison_order <- c(
-    "Sapwood_Heartwood_Within",
-    "Sapwood_Sapwood_Within",
-    "Heartwood_Heartwood_Within",
-    "Sapwood_Heartwood_Between",
-    "Sapwood_Sapwood_Between",
-    "Heartwood_Heartwood_Between"
-  )
-  
-  group_means$Comparison <- factor(group_means$Comparison, levels = comparison_order)
-  
-  # Define bracket positions
-  y_max <- max(group_means$MeanDistance + group_means$SE, na.rm = TRUE)  # Highest value for placement
-  bracket_height <- 0.05  # Adjust if needed
-  
-  # Define y-axis labels for each metric
-  y_axis_labels <- c(
-    "wunifrac" = "WUnifrac Distance",
-    "uunifrac" = "Unweighted Unifrac Distance",
-    "braycurtis" = "Bray-Curtis Distance"
-  )
+  # Calculate y-axis limits
+  y_max <- max(plot_data$emmean + plot_data$SE, na.rm = TRUE)
+  bracket_height <- y_max * 0.1
+  text_height <- bracket_height * 1.2
   
   # Generate barplot
-  barplot_plot <- ggplot(group_means, aes(x = Comparison, y = MeanDistance, fill = Comparison)) +
+  barplot_plot <- ggplot(plot_data, aes(x = Comparison, y = emmean, fill = Comparison)) +
     geom_bar(stat = "identity", color = "black") +
-    geom_errorbar(aes(ymin = MeanDistance - SE, ymax = MeanDistance + SE), width = 0.2) +
-    geom_text(aes(y = MeanDistance + SE + 0.02, label = Letters), size = 5, hjust = 0.5) +
+    geom_errorbar(aes(ymin = emmean - SE, ymax = emmean + SE), width = 0.2) +
+    geom_text(aes(y = emmean + SE + y_max * 0.05, label = Letters), size = 5, hjust = 0.5) +
     
     # Bracket for "Within Species"
-    geom_segment(aes(x = 1, xend = 3, y = y_max + bracket_height, yend = y_max + bracket_height), size = 0.7) +
-    annotate("text", x = 2, y = y_max + bracket_height + 0.02, label = "Within Species", size = 5) +
+    geom_segment(aes(x = 1, xend = 3, 
+                     y = y_max + bracket_height, 
+                     yend = y_max + bracket_height), size = 0.5) +
+    annotate("text", x = 2, 
+             y = y_max + text_height, 
+             label = "Within Species", size = 4) +
     
     # Bracket for "Between Species"
-    geom_segment(aes(x = 4, xend = 6, y = y_max + bracket_height, yend = y_max + bracket_height), size = 0.7) +
-    annotate("text", x = 5, y = y_max + bracket_height + 0.02, label = "Between Species", size = 5) +
+    geom_segment(aes(x = 4, xend = 6, 
+                     y = y_max + bracket_height, 
+                     yend = y_max + bracket_height), size = 0.5) +
+    annotate("text", x = 5, 
+             y = y_max + text_height, 
+             label = "Between Species", size = 4) +
     
-    scale_x_discrete(labels = comparison_labels) +  # Apply new labels while keeping 6 bars
+    scale_x_discrete(labels = comparison_labels) +
     scale_fill_manual(values = c(
       "Sapwood_Heartwood_Within" = "grey50",
       "Sapwood_Sapwood_Within" = "#377EB8",
@@ -276,29 +245,28 @@ analyze_distance_matrix <- function(dist_matrix, metric_name) {
       "Sapwood_Sapwood_Between" = "#377EB8",
       "Heartwood_Heartwood_Between" = "#8B4513"
     )) +
-    labs(x = "Comparison", y = y_axis_labels[[metric_name]]) +  # Dynamically set y-axis label
+    labs(x = "Comparison", 
+         y = switch(metric_name,
+                    "wunifrac" = "WUnifrac Distance",
+                    "uunifrac" = "Unweighted Unifrac Distance",
+                    "braycurtis" = "Bray-Curtis Distance")) +
     theme_classic() +
     theme(legend.position = "none")
   
+  # Store the plot in the global environment
   assign(paste0("barplot_", metric_name), barplot_plot, envir = .GlobalEnv)
   
-  # Explicitly print the barplot
+  # Print the plot
   print(barplot_plot)
-  
-  
 }
 
-# Run for each distance metric
+# Run analysis for each distance metric
 for (metric in names(distance_matrices)) {
   analyze_distance_matrix(distance_matrices[[metric]], metric)
 }
 
-
-
-
-
+# Generate heatmaps using the same function from before
 generate_heatmap <- function(dist_matrix, metric_name) {
-  
   metadata_clean <- data.frame(sample_data(phyloseq_clean)) %>%
     filter(!is.na(Species) & !is.na(SampleType))
   
