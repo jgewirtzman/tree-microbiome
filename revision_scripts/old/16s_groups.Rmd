@@ -1,3 +1,705 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:661528a5154aaab17a13720385b724f3be0397519876f33124834c744da0adeb
-size 25034
+---
+title: "wood_microbiome"
+author: "Jon Gewirtzman"
+date: "2024-12-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup}
+library(phyloseq)
+library(vegan)
+library(ggplot2)
+library(umap)
+library(ape)
+library(pheatmap)
+library(dplyr)
+library(tidyr)
+library(purrr)
+```
+
+
+```{r otu}
+##############################################################################
+# 1. Load OTU (ASV) Table
+##############################################################################
+# This example assumes your raw text file is organized as follows:
+#   - First column: OTU IDs (e.g., seq####)
+#   - Subsequent columns: sample counts
+# If your file is different, adjust accordingly.
+
+otu_file <- "/Users/jongewirtzman/Downloads/OTU_table (3).txt"
+
+otu_table_data <- read.table(
+  file = otu_file,
+  header = TRUE,
+  sep = "\t",
+  stringsAsFactors = FALSE,
+  row.names = 1,       # This makes the first column OTU IDs as row names
+  check.names = FALSE  # Prevent R from altering column names
+)
+
+# Transpose the OTU table
+otu_table_transposed <- t(otu_table_data)
+
+# Convert to a data frame and restore row names
+otu_table_transposed <- as.data.frame(otu_table_transposed)
+
+# Convert entries to numeric just in case there are character columns
+otu_data_numeric <- as.data.frame(apply(otu_table_transposed, 2, as.numeric))
+
+
+# The original row names (sample names) should now be preserved
+rownames(otu_data_numeric) <- colnames(otu_table_data)
+
+# Check row names
+head(rownames(otu_data_numeric))  # Should be sample names
+
+
+
+
+
+# Load Taxonomy Data
+taxonomy_file <- "/Users/jongewirtzman/Downloads/taxonomy_table (1).txt"
+taxonomy_data <- read.table(
+  file = taxonomy_file,
+  header = TRUE,
+  sep = "\t",
+  stringsAsFactors = FALSE,
+  row.names = 1 # OTU IDs as row names
+)
+
+# Filter out rows with "Mitochondria" or "Chloroplast" in the Taxon column
+filtered_taxonomy <- taxonomy_data %>%
+  filter(
+    !grepl("Mitochondria", Taxon, ignore.case = TRUE) &
+    !grepl("Chloroplast", Taxon, ignore.case = TRUE)
+  )
+
+# Subset the OTU table to include only OTUs in the filtered taxonomy
+otu_data_numeric <- otu_data_numeric[, colnames(otu_data_numeric) %in% rownames(filtered_taxonomy)]
+```
+
+```{r metadata}
+
+
+##############################################################################
+# 2. Load and Prepare Sample Metadata
+##############################################################################
+# Adjust column references (e.g., "X.1", "core_type") to match your actual metadata file.
+# We'll create a data.frame that has:
+#   - SampleID
+#   - Species
+#   - SampleType (e.g., "Inner"/"Outer")
+
+metadata_file <- "/Users/jongewirtzman/Downloads/16S_tree_sample_table_with_meta (1).csv"
+metadata_raw  <- read.csv(metadata_file, stringsAsFactors = FALSE)
+
+# Construct a minimal metadata df with the necessary columns
+metadata <- data.frame(
+  SampleID   = metadata_raw$X.1,
+  Species    = substr(metadata_raw$Inner.Core.Sample.ID.x, 1, 4),
+  SampleType = metadata_raw$core_type
+)
+
+# We only want samples labeled "Inner" or "Outer"
+metadata <- subset(metadata, SampleType %in% c("Inner", "Outer"))
+
+# IMPORTANT: set row names to the sample IDs, so that
+# rownames(sample_data) match rownames in the OTU table
+rownames(metadata) <- metadata$SampleID
+```
+
+```{r align}
+
+##############################################################################
+# 3. Align Sample IDs Between OTU Table and Metadata
+##############################################################################
+# After transposing, the rownames of `otu_data_numeric` should be the sample names.
+# We find the intersection of sample IDs to ensure perfect matching.
+
+sample_names_otu <- rownames(otu_data_numeric)
+sample_names_meta <- rownames(metadata)
+
+common_samples <- intersect(sample_names_otu, sample_names_meta)
+length(common_samples)  # How many samples do they have in common?
+
+# Subset both the OTU table and the metadata to these matching samples only
+otu_data_filtered <- otu_data_numeric[common_samples, , drop = FALSE]
+metadata_filtered <- metadata[common_samples, , drop = FALSE]
+
+# Double-check dimensions
+dim(otu_data_filtered)   
+dim(metadata_filtered)
+```
+```{r tree}
+##############################################################################
+# 4. Load and Prune Phylogenetic Tree
+##############################################################################
+# Make sure the tree is properly rooted if you're using UniFrac.
+# The tip labels (phylo_tree$tip.label) must match the OTU IDs
+# which are now in the columns of `otu_data_filtered`.
+
+tree_file <- "/Users/jongewirtzman/Downloads/rooted_tree.nwk"
+phylo_tree <- ape::read.tree(tree_file)
+
+# Match tree tips with OTU IDs in the filtered table (the columns):
+tree_taxa  <- phylo_tree$tip.label
+otu_taxa   <- colnames(otu_data_filtered)
+
+matching_taxa <- intersect(tree_taxa, otu_taxa)
+
+# Prune the tree to keep only matching tips
+phylo_tree_pruned <- ape::keep.tip(phylo_tree, matching_taxa)
+
+# Prune the OTU table to the same set of matching taxa
+otu_data_filtered <- otu_data_filtered[, matching_taxa, drop = FALSE]
+```
+
+```{r phyloseq}
+
+
+##############################################################################
+# 5. Create Phyloseq Object
+##############################################################################
+# We specify taxa_are_rows=FALSE because our OTU table has samples as rows, OTUs as columns.
+
+otu_table_ps   <- otu_table(as.matrix(otu_data_filtered), taxa_are_rows = FALSE)
+sample_data_ps <- sample_data(metadata_filtered)
+phy_tree_ps    <- phy_tree(phylo_tree_pruned)
+
+# Now construct the phyloseq object
+physeq <- phyloseq(otu_table_ps, sample_data_ps, phy_tree_ps)
+physeq  # Should print without error about mismatches
+```
+
+
+```{r permanova}
+##############################################################################
+# 7. PERMANOVA and Beta-Dispersion
+##############################################################################
+# Subset and clean metadata in phyloseq object
+metadata_clean <- data.frame(sample_data(physeq)) %>%
+  filter(!is.na(Species) & !is.na(SampleType))
+
+# Subset phyloseq object
+phyloseq_clean <- prune_samples(rownames(metadata_clean), physeq)
+
+# Calculate distance matrix
+unifrac_dist_clean <- phyloseq::distance(phyloseq_clean, method = "wunifrac")
+
+# Run adonis2
+adonis_results <- adonis2(unifrac_dist_clean ~ Species + SampleType, 
+                          data = data.frame(sample_data(phyloseq_clean)))
+print(adonis_results)
+
+adonis_results2 <- adonis2(unifrac_dist_clean ~ SampleType, 
+                          data = data.frame(sample_data(phyloseq_clean)))
+print(adonis_results2)
+
+species_disp <- betadisper(unifrac_dist_clean, metadata_clean$Species)
+sampletype_disp <- betadisper(unifrac_dist_clean, metadata_clean$SampleType)
+
+anova_species <- anova(species_disp)
+anova_sampletype <- anova(sampletype_disp)
+
+cat("\nANOVA for dispersion by species:\n")
+print(anova_species)
+cat("\nANOVA for dispersion by sample type:\n")
+print(anova_sampletype)
+```
+
+```{r ordination}
+##############################################################################
+# 8. Ordination (PCoA)
+##############################################################################
+ordination <- ordinate(phyloseq_clean, method = "PCoA", distance = "wunifrac")
+
+pcoa_plot <- plot_ordination(physeq, ordination, color = "Species", shape = "SampleType") +
+  geom_point(size = 4, alpha = 0.8) +
+  ggtitle("PCoA - Weighted UniFrac Distance") +
+  theme_minimal()
+print(pcoa_plot)
+
+##############################################################################
+# 9. Calculate and Plot Centroids for Species and SampleType
+##############################################################################
+
+# Extract PCoA coordinates
+ordination_coords <- as.data.frame(ordination$vectors)
+
+# Add metadata information to the ordination coordinates
+ordination_coords <- cbind(ordination_coords, metadata_clean)
+
+# Calculate centroids for Species * SampleType
+centroids <- ordination_coords %>%
+  group_by(Species, SampleType) %>%
+  summarise(
+    Centroid_X = mean(Axis.1, na.rm = TRUE),
+    Centroid_Y = mean(Axis.2, na.rm = TRUE)
+  )
+
+# Create a data frame for lines by pivoting centroids
+centroid_lines <- centroids %>%
+  pivot_wider(names_from = SampleType, values_from = c(Centroid_X, Centroid_Y)) %>%
+  filter(!is.na(Centroid_X_Inner) & !is.na(Centroid_X_Outer))  # Ensure both centroids exist
+
+# Get the percentage variance explained by each axis
+variance_explained <- ordination$values$Relative_eig * 100
+
+# Format axis labels with variance explained
+x_axis_label <- sprintf("PCoA Axis 1 (%.1f%%)", variance_explained[1])
+y_axis_label <- sprintf("PCoA Axis 2 (%.1f%%)", variance_explained[2])
+
+# Rename "Inner" to "Heartwood" and "Outer" to "Sapwood" in the SampleType column
+ordination_coords$SampleType <- dplyr::recode(ordination_coords$SampleType,
+                                       "Inner" = "Heartwood",
+                                       "Outer" = "Sapwood")
+centroids$SampleType <- dplyr::recode(centroids$SampleType,
+                               "Inner" = "Heartwood",
+                               "Outer" = "Sapwood")
+
+# Recreate the plot with updated labels
+centroid_plot_with_variance <- ggplot() +
+  # Add lines connecting inner to outer centroids for each species
+  geom_segment(data = centroid_lines,
+               aes(x = Centroid_X_Inner, y = Centroid_Y_Inner,
+                   xend = Centroid_X_Outer, yend = Centroid_Y_Outer, color = Species),
+               size = 1, linetype = "dashed") +
+  # Add individual sample points with transparency
+  geom_point(data = ordination_coords, aes(x = Axis.1, y = Axis.2, color = Species, shape = SampleType),
+             size = 4, alpha = 0.2) +
+  # Add centroids
+  geom_point(data = centroids, aes(x = Centroid_X, y = Centroid_Y, color = Species, shape = SampleType),
+             size = 6, alpha = 0.8) +
+  theme_minimal() +
+  labs(x = x_axis_label, y = y_axis_label) +
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal" # Arrange the legend items horizontally
+  ) +
+  guides(
+    color = guide_legend(nrow = 2), # Break legend into 2 rows
+    shape = guide_legend(nrow = 2)  # Break shape legend into 2 rows if necessary
+  )
+
+# Display the plot
+print(centroid_plot_with_variance)
+```
+
+```{r heatmap}
+##############################################################################
+# 12. Heatmap of Aggregated UniFrac Distances by (Species_Tissue) Group
+##############################################################################
+metadata_clean$Group <- paste(metadata_clean$Species, metadata_clean$SampleType, sep = "_")
+group_names <- unique(metadata_clean$Group)
+
+unifrac_matrix <- as.matrix(unifrac_dist_clean)
+
+# Initialize distance matrix
+group_distance_matrix <- matrix(
+  0,
+  nrow = length(group_names),
+  ncol = length(group_names),
+  dimnames = list(group_names, group_names)
+)
+
+# Calculate mean UniFrac distances for groups
+for (i in seq_along(group_names)) {
+  for (j in seq_along(group_names)) {
+    group1_samples <- rownames(subset(metadata_clean, Group == group_names[i]))
+    group2_samples <- rownames(subset(metadata_clean, Group == group_names[j]))
+    group_distances <- unifrac_matrix[group1_samples, group2_samples]
+    group_distance_matrix[i, j] <- mean(group_distances, na.rm = TRUE)
+  }
+}
+
+# Count observations per group
+group_counts <- metadata_clean %>%
+  dplyr::group_by(Group) %>%
+  dplyr::summarize(n = dplyr::n())
+
+# Filter groups with n > 5
+filtered_groups <- group_counts %>%
+  dplyr::filter(n > 5) %>%
+  dplyr::pull(Group)
+
+# Subset distance matrix to filtered groups
+filtered_distance_matrix <- group_distance_matrix[filtered_groups, filtered_groups]
+
+# Update row and column names for Heartwood and Sapwood
+rownames(filtered_distance_matrix) <- gsub("Inner", "Heartwood", 
+                                           gsub("Outer", "Sapwood", 
+                                                rownames(filtered_distance_matrix)))
+colnames(filtered_distance_matrix) <- gsub("Inner", "Heartwood", 
+                                           gsub("Outer", "Sapwood", 
+                                                colnames(filtered_distance_matrix)))
+
+# Create an annotation for Heartwood/Sapwood
+filtered_annotation <- data.frame(
+  SampleType = gsub("Heartwood", "Heartwood", 
+                    gsub("Sapwood", "Sapwood", 
+                         gsub(".*_(Heartwood|Sapwood)", "\\1", rownames(filtered_distance_matrix))))
+)
+rownames(filtered_annotation) <- rownames(filtered_distance_matrix)
+
+# Define colors for Heartwood and Sapwood
+annotation_colors <- list(
+  SampleType = c("Heartwood" = "#8B4513", "Sapwood" = "#377EB8") # Distinct colors
+)
+
+library(RColorBrewer)
+
+# Create the heatmap using a diverging palette
+species_heatmap <- pheatmap(
+  filtered_distance_matrix,
+  color = rev(colorRampPalette(brewer.pal(11, "RdYlBu"))(50)),  # Diverging palette
+  clustering_distance_rows = "euclidean",
+  #clustering_distance_cols = "correlation",
+  #clustering_method = "average",
+  fontsize = 10,
+  annotation_row = filtered_annotation,
+  annotation_colors = annotation_colors
+)
+
+
+
+```
+
+
+```{r analysis}
+# Install/load necessary packages
+# install.packages("vegan")
+library(vegan)
+
+# Distance matrix
+dist_matrix <- as.matrix(unifrac_dist_clean)
+
+# Add metadata for easy subsetting
+dist_metadata <- metadata_filtered[rownames(dist_matrix), ]
+
+# Count the number of samples for each species by SampleType
+sapwood_counts <- table(dist_metadata$Species[dist_metadata$SampleType == "Outer"])
+heartwood_counts <- table(dist_metadata$Species[dist_metadata$SampleType == "Inner"])
+
+# Filter species with at least 5 samples for both SampleTypes
+species_list <- intersect(
+  names(sapwood_counts[sapwood_counts >= 5]),
+  names(heartwood_counts[heartwood_counts >= 5])
+)
+
+# Create a data frame to store PERMANOVA results
+permanova_results <- data.frame(
+  Species     = character(),
+  Comparison  = character(),
+  F.Model     = numeric(),
+  R2          = numeric(),
+  P.Value     = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (species in species_list) {
+  
+  # Identify indices for the current species
+  sapwood_indices    <- rownames(dist_metadata[
+    dist_metadata$Species == species & dist_metadata$SampleType == "Outer", 
+  ])
+  heartwood_indices  <- rownames(dist_metadata[
+    dist_metadata$Species == species & dist_metadata$SampleType == "Inner", 
+  ])
+  
+  # Identify indices for other species
+  other_sapwood_indices <- rownames(dist_metadata[
+    dist_metadata$Species != species & dist_metadata$SampleType == "Outer", 
+  ])
+  other_heartwood_indices <- rownames(dist_metadata[
+    dist_metadata$Species != species & dist_metadata$SampleType == "Inner", 
+  ])
+  
+  # Create a list of comparisons, similar to what you had before
+  comparisons <- list(
+    "Sapwood-to-Same-Species-Heartwood" = list(groupA = sapwood_indices, groupB = heartwood_indices),
+    "Sapwood-to-Other-Species-Sapwood"  = list(groupA = sapwood_indices, groupB = other_sapwood_indices),
+    "Sapwood-to-Other-Species-Heartwood"= list(groupA = sapwood_indices, groupB = other_heartwood_indices),
+    "Heartwood-to-Other-Species-Sapwood"= list(groupA = heartwood_indices, groupB = other_sapwood_indices),
+    "Heartwood-to-Other-Species-Heartwood"= list(groupA = heartwood_indices, groupB = other_heartwood_indices)
+  )
+  
+  # (Optional) If you also want heartwood-to-sapwood of the same species as a separate row:
+  # "Heartwood-to-Same-Species-Sapwood" = list(groupA = heartwood_indices, groupB = sapwood_indices)
+  
+  # Loop through comparisons
+  for (comp_name in names(comparisons)) {
+    
+    # Extract groupA and groupB indices
+    groupA_ids <- comparisons[[comp_name]]$groupA
+    groupB_ids <- comparisons[[comp_name]]$groupB
+    
+    # Combine sample sets
+    these_samples <- c(groupA_ids, groupB_ids)
+    
+    # Subset the distance matrix to just these samples
+    dist_subset <- as.dist(dist_matrix[these_samples, these_samples])
+    
+    # Create a grouping factor that identifies group A vs group B
+    # We’ll store it in the metadata
+    dist_metadata_subset <- dist_metadata[these_samples, , drop = FALSE]
+    dist_metadata_subset$group <- ifelse(rownames(dist_metadata_subset) %in% groupA_ids, 
+                                         "GroupA", "GroupB")
+    
+    # If either groupA or groupB is empty (or too small), skip
+    if (length(groupA_ids) < 2 || length(groupB_ids) < 2) {
+      # Not enough samples in either group to do PERMANOVA
+      permanova_results <- rbind(permanova_results, data.frame(
+        Species    = species,
+        Comparison = comp_name,
+        F.Model    = NA,
+        R2         = NA,
+        P.Value    = NA
+      ))
+      next
+    }
+    
+    # Run PERMANOVA (you can use adonis or adonis2)
+    # method here is not strictly necessary if dist_subset is already a distance object
+    adonis_res <- adonis2(dist_subset ~ group, 
+                          data = dist_metadata_subset, 
+                          permutations = 999)
+    
+    # Extract results
+    F_model <- adonis_res$F[1]       # F statistic for the first row (group)
+    R2_val  <- adonis_res$R2[1]      # R2 for the first row
+    p_val   <- adonis_res$`Pr(>F)`[1] # p-value for the first row
+    
+    # Store in permanova_results
+    permanova_results <- rbind(permanova_results, data.frame(
+      Species    = species,
+      Comparison = comp_name,
+      F.Model    = F_model,
+      R2         = R2_val,
+      P.Value    = p_val
+    ))
+  }
+}
+
+# After the loop, examine your results:
+head(permanova_results)
+
+
+
+
+
+
+
+
+library(reshape2)
+library(ggplot2)
+
+# Suppose you'd like to plot R2 as a heatmap:
+heatmap_data <- permanova_results[, c("Species", "Comparison", "R2", "P.Value")]
+heatmap_data$Significance <- ifelse(heatmap_data$P.Value < 0.05, "*", "")
+
+# Reshape wide
+heatmap_matrix <- dcast(heatmap_data, Species ~ Comparison, value.var = "R2")
+sig_matrix     <- dcast(heatmap_data, Species ~ Comparison, value.var = "Significance")
+
+# Melt back to long for ggplot2
+heatmap_long <- melt(heatmap_matrix, id.vars = "Species")
+colnames(heatmap_long) <- c("Species", "Comparison", "R2")
+
+sig_long <- melt(sig_matrix, id.vars = "Species")
+colnames(sig_long) <- c("Species", "Comparison", "Significance")
+
+# Merge R2 with significance
+heatmap_long <- merge(heatmap_long, sig_long, by = c("Species","Comparison"))
+
+# Modify the Comparison column to include line breaks
+heatmap_long$Comparison <- gsub("-", "\n", heatmap_long$Comparison)
+
+# Plot
+permanova_heatmap<-ggplot(heatmap_long, aes(x = Comparison, y = Species, fill = R2)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Significance), color = "black", size = 4) +
+  scale_fill_gradient(low = "white", high = "#984EA3", na.value = "grey") +
+  labs(
+    #title = "PERMANOVA R² Heatmap with Significance Annotations",
+    x = "Comparison", y = "Species", fill = "R²"
+  ) +
+  theme_minimal()
+permanova_heatmap
+```
+
+```{r quantify}
+# Load required libraries
+########################################
+# Load required libraries
+########################################
+library(dplyr)
+library(tidyr)
+library(lme4)
+library(emmeans)
+library(ggplot2)
+library(multcompView)
+
+########################################
+# Step 1: Efficient Data Preparation
+########################################
+# Define comparison order once
+comparison_order <- c(
+  "Sapwood_Heartwood_Within",
+  "Sapwood_Sapwood_Within",
+  "Heartwood_Heartwood_Within",
+  "Sapwood_Heartwood_Between",
+  "Sapwood_Sapwood_Between",
+  "Heartwood_Heartwood_Between"
+)
+
+# Efficient data preparation with minimal operations
+dist_df <- as.data.frame(as.matrix(unifrac_matrix))
+dist_df$Sample1 <- rownames(dist_df)
+
+dist_long <- dist_df %>%
+  pivot_longer(cols = -Sample1, names_to = "Sample2", values_to = "Distance") %>%
+  filter(Sample1 != Sample2) %>%
+  left_join(metadata_clean, by = c("Sample1" = "SampleID")) %>%
+  left_join(metadata_clean, by = c("Sample2" = "SampleID")) %>%
+  transmute(
+    Sample1 = factor(Sample1),  # Convert to factor once
+    Sample2 = factor(Sample2),  # Convert to factor once
+    Distance = Distance,
+    Comparison = factor(case_when(  # Create factor directly
+      Species.x == Species.y & SampleType.x == "Outer" & SampleType.y == "Inner" ~ "Sapwood_Heartwood_Within",
+      Species.x == Species.y & SampleType.x == "Outer" & SampleType.y == "Outer" ~ "Sapwood_Sapwood_Within",
+      Species.x == Species.y & SampleType.x == "Inner" & SampleType.y == "Inner" ~ "Heartwood_Heartwood_Within",
+      Species.x != Species.y & SampleType.x == "Outer" & SampleType.y == "Inner" ~ "Sapwood_Heartwood_Between",
+      Species.x != Species.y & SampleType.x == "Outer" & SampleType.y == "Outer" ~ "Sapwood_Sapwood_Between",
+      Species.x != Species.y & SampleType.x == "Inner" & SampleType.y == "Inner" ~ "Heartwood_Heartwood_Between"
+    ), levels = comparison_order)
+  ) %>%
+  filter(!is.na(Comparison))
+
+########################################
+# Step 2: Fit Optimized Mixed Model
+########################################
+# Use optimized model fitting
+mixed_model <- lmer(Distance ~ Comparison + (1|Sample1) + (1|Sample2),
+                    data = dist_long,
+                    )
+
+########################################
+# Step 3: Optimized EMMs Calculation
+########################################
+# Calculate EMMs with optimized settings
+emm <- emmeans(mixed_model, 
+               specs = "Comparison",
+               verbose=T)          # Use all available cores
+
+# After fitting mixed model and calculating EMMs
+# Custom grouping based on magnitude of differences
+cld <- multcomp::cld(emm, 
+                     alpha = 0.05,
+                     adjust = "tukey",
+                     #sort = TRUE,     # Sort by means
+                     #decreasing = FALSE,  # Start with smallest distances
+                     Letters = c("a", "b", "c", "d", "e", "f")
+)
+
+# If this still doesn't work, we might need to manually assign groups based on 
+# the pairwise p-values and magnitudes of differences
+
+########################################
+# Step 4: Prepare Plot Data Efficiently
+########################################
+# Extract results directly to avoid additional computations
+plot_data <- as.data.frame(cld) %>%
+  dplyr::select(Comparison, emmean, SE, .group) %>%
+  rename(Letters = .group) %>%
+  mutate(
+    Comparison_clean = factor(case_when(
+      Comparison == "Sapwood_Heartwood_Within"    ~ "Sapwood-\nHeartwood\n(Within)",
+      Comparison == "Sapwood_Sapwood_Within"      ~ "Sapwood-\nSapwood\n(Within)",
+      Comparison == "Heartwood_Heartwood_Within"  ~ "Heartwood-\nHeartwood\n(Within)",
+      Comparison == "Sapwood_Heartwood_Between"   ~ "Sapwood-\nHeartwood\n(Between)",
+      Comparison == "Sapwood_Sapwood_Between"     ~ "Sapwood-\nSapwood\n(Between)",
+      Comparison == "Heartwood_Heartwood_Between" ~ "Heartwood-\nHeartwood\n(Between)"
+    ), levels = c(
+      "Sapwood-\nHeartwood\n(Within)",
+      "Sapwood-\nSapwood\n(Within)",
+      "Heartwood-\nHeartwood\n(Within)",
+      "Sapwood-\nHeartwood\n(Between)",
+      "Sapwood-\nSapwood\n(Between)",
+      "Heartwood-\nHeartwood\n(Between)"
+    ))
+  )
+
+########################################
+# Step 5: Create Plot
+########################################
+barplot <- ggplot(plot_data, aes(x = Comparison_clean, y = emmean, fill = Comparison_clean)) +
+  geom_bar(stat = "identity", color = "black") +
+  geom_errorbar(
+    aes(ymin = emmean - SE, ymax = emmean + SE),
+    width = 0.2
+  ) +
+  geom_text(
+    aes(y = emmean + SE + 0.02, label = Letters),
+    size = 5,
+    hjust = 0.5
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Sapwood-\nHeartwood\n(Within)"   = "grey50",
+      "Sapwood-\nSapwood\n(Within)"     = "#377EB8",
+      "Heartwood-\nHeartwood\n(Within)" = "#8B4513",
+      "Sapwood-\nHeartwood\n(Between)"  = "grey50",
+      "Sapwood-\nSapwood\n(Between)"    = "#377EB8",
+      "Heartwood-\nHeartwood\n(Between)"= "#8B4513"
+    )
+  ) +
+  labs(
+    x = "Comparison",
+    y = "WUnifrac Distance",
+    #caption = "Error bars represent standard error.\nDifferent letters indicate significant differences (p < 0.05, Tukey-adjusted)."
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "none"
+    #axis.text.x = element_text(size = 10),
+    #axis.title = element_text(size = 12, face = "bold"),
+    #plot.caption = element_text(size = 8, hjust = 0)
+  )
+
+########################################
+# Clean up parallel processing
+########################################
+# Print key results and plot
+print("Model Summary:")
+print(summary(mixed_model))
+
+print("\nEstimated Marginal Means:")
+print(emm)
+
+# Display plot
+barplot
+```
+
+```{r figure}
+library(patchwork)
+library(ggplot2)
+
+# Combine plots using patchwork
+layout <- (
+  centroid_plot_with_variance /  # Top row: Centroid plot
+  (permanova_heatmap | barplot)  # Bottom row: Heatmap and barplot side-by-side
+)
+
+# Add panel letters
+final_plot <- layout + 
+  plot_annotation(tag_levels = 'A')  # Adds letters A, B, C automatically
+
+# Display the final combined plot
+print(final_plot)
+```
