@@ -293,7 +293,7 @@ plot_sample_distributions <- function(GC_data) {
   # Filter for samples only and gather gas data
   sample_data <- GC_data %>%
     filter(!is.na(Species) & !is.na(Tissue)) %>%  # Filter for actual samples
-    select(Sample.ID, O2_concentration, CH4_concentration, 
+    dplyr::select(Sample.ID, O2_concentration, CH4_concentration, 
            CO2_concentration, N2O_concentration) %>%
     gather(key = "Gas", value = "Concentration", -Sample.ID) %>%
     mutate(Gas = gsub("_concentration", "", Gas))
@@ -319,41 +319,41 @@ plot_sample_distributions <- function(GC_data) {
 plot_standards_validation <- function(O2_data, GHG_data) {
   # Process O2 standards
   o2_validation <- O2_data %>%
-    select(Sample, O2_Area, O2_ppm, X.O2...ppm.) %>%
+    dplyr::select(Sample, O2_Area, O2_ppm, X.O2...ppm.) %>%
     mutate(
       Expected = as.numeric(gsub(",", "", X.O2...ppm.)),
       Measured = O2_ppm,
       Gas = "O2"
     ) %>%
-    select(Gas, Expected, Measured)
+    dplyr::select(Gas, Expected, Measured)
   
   # Process other gases
   n2o_validation <- GHG_data %>%
-    select(Sample, N2O_Area, N2O_ppm, X.N2O...ppm.) %>%
+    dplyr::select(Sample, N2O_Area, N2O_ppm, X.N2O...ppm.) %>%
     mutate(
       Expected = as.numeric(gsub(",", "", X.N2O...ppm.)),
       Measured = N2O_ppm,
       Gas = "N2O"
     ) %>%
-    select(Gas, Expected, Measured)
+    dplyr::select(Gas, Expected, Measured)
   
   ch4_validation <- GHG_data %>%
-    select(Sample, CH4_Area, CH4_ppm, X.CH4...ppm.) %>%
+    dplyr::select(Sample, CH4_Area, CH4_ppm, X.CH4...ppm.) %>%
     mutate(
       Expected = as.numeric(gsub(",", "", X.CH4...ppm.)),
       Measured = CH4_ppm,
       Gas = "CH4"
     ) %>%
-    select(Gas, Expected, Measured)
+    dplyr::select(Gas, Expected, Measured)
   
   co2_validation <- GHG_data %>%
-    select(Sample, CO2_Area, CO2_ppm, X.CO2...ppm.) %>%
+    dplyr::select(Sample, CO2_Area, CO2_ppm, X.CO2...ppm.) %>%
     mutate(
       Expected = as.numeric(gsub(",", "", X.CO2...ppm.)),
       Measured = CO2_ppm,
       Gas = "CO2"
     ) %>%
-    select(Gas, Expected, Measured)
+    dplyr::select(Gas, Expected, Measured)
   
   # Combine all gases
   all_validation <- bind_rows(
