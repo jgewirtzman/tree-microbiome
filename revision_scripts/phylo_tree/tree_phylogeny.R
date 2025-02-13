@@ -1,12 +1,12 @@
-source("revision_scripts/phylo/S.phylomaker.R")
+source("revision_scripts/phylo_tree/S.phylomaker.R")
 
 #S.PhyloMaker(tree, spList, nodes, output.spList = T, scenarios = c("S1", "S2", "S3")) 
   
 library("phytools")                       # load the "phytools" package.    
 #example<-read.csv("example.splist",header=T, sep="\t")       # read in the example species list.    
-my_splist<-read.csv("revision_scripts/phylo/updated_species_data.csv")       # read in the example species list.    
-phylo<-read.tree("revision_scripts/phylo/PhytoPhylo")      # read in the megaphylogeny.    
-nodes<-read.csv("revision_scripts/phylo/nodes",header=T, sep="\t")     # read in the nodes information of the megaphylogeny.    
+my_splist<-read.csv("revision_scripts/phylo_tree/updated_species_data.csv")       # read in the example species list.    
+phylo<-read.tree("revision_scripts/phylo_tree/PhytoPhylo")      # read in the megaphylogeny.    
+nodes<-read.csv("revision_scripts/phylo_tree/nodes",header=T, sep="\t")     # read in the nodes information of the megaphylogeny.    
 #result<-S.PhyloMaker(spList=example, tree=phylo, nodes=nodes)      # run the function S.PhyloMaker.    
 result<-S.PhyloMaker(spList=my_splist, tree=phylo, nodes=nodes)      # run the funxction S.PhyloMaker.    
 str(result)       # the structure of the ouput of S.PhyloMaker.    
@@ -188,7 +188,7 @@ data <- setNames(distance_data$distance, distance_data$species)
 color_palette_phylo <- create_viridis_palette(data)
 
 # Read in the phylogenetic tree
-tree_scenario1 <- read.tree("revision_scripts/phylo/PhytoPhylo")  
+tree_scenario1 <- read.tree("revision_scripts/phylo_tree/PhytoPhylo")  
 
 # Ensure species names in `tree_scenario1` match `distance_data`
 tree_scenario1$tip.label <- gsub("_", " ", tree_scenario1$tip.label)
@@ -205,11 +205,11 @@ print(distance_data)
 
 # ✅ FIX: Use `aes(color = I(color))` instead of `aes(color = species)` for direct color assignment
 tree_plot <- ggtree(tree_scenario1) %<+% distance_data +
-  geom_tiplab(aes(color = I(color)), fontface = "bold") +  # Apply exact colors
+  geom_tiplab(aes(color = I(color)), fontface="bold") +  # Apply exact colors
   geom_tippoint(aes(color = I(color)), size = 2) +  # Apply colors to tip points
   theme_tree2() +
   theme(legend.position = "top") +
-  ggplot2::xlim(0, 500)  # Adjust x-axis as needed
+  ggplot2::xlim(0, 450)  # Adjust x-axis as needed
 
 # Display the plot
 print(tree_plot)
