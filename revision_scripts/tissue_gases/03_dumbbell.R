@@ -107,5 +107,4 @@ ggsave("dumbell_plot_with_species_labels.png", final_plot, width = 5, height = 5
 dumbbell_plot <- plot_grid(final_plot, labels = "i", label_size = 14, label_x = 0.00, label_y = 0.95, hjust = 0, vjust = 1)
 
 # Display the plot
-Use
-
+dumbbell_plot
