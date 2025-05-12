@@ -213,3 +213,7 @@ tree_plot <- ggtree(tree_scenario1) %<+% distance_data +
 
 # Display the plot
 print(tree_plot)
+
+library(svglite)
+# Save the plot with a wider aspect ratio
+ggsave("wide_tree_plot.svg", tree_plot, width = 7, height = 3, units = "in")
