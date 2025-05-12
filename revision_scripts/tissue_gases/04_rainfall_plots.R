@@ -361,6 +361,7 @@ rainfall_labeled
 # Save the plot
 ggsave("rainfall_plot.png", rainfall, width = 5.33, height = 8)
 
+ggsave("rainfall_plot.svg", rainfall, width = 5.33, height = 8)
 
 
 
