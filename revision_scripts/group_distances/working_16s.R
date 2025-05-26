@@ -360,3 +360,7 @@ generate_heatmap <- function(dist_matrix, metric_name) {
 for (metric in names(distance_matrices)) {
   generate_heatmap(distance_matrices[[metric]], metric)
 }
+
+# MINIMAL ADDITION 1: After running 16S analysis, save the plots with specific names
+barplot_16S_wunifrac <- barplot_wunifrac
+heatmap_16S_wunifrac <- heatmap_wunifrac

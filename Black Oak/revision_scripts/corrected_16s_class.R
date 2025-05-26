@@ -143,6 +143,8 @@ p <- ggplot(plot_data, aes(x = Media, y = Class, fill = RelativeAbundance)) +
 
 p
 
+p_16S <- p  # This will be the plot from the first script
+
 # ------------------------------
 # Step 5: Save Plot
 # ------------------------------

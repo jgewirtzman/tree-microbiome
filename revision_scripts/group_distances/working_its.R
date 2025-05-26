@@ -340,3 +340,7 @@ generate_heatmap <- function(dist_matrix, metric_name) {
 for (metric in names(distance_matrices)) {
   generate_heatmap(distance_matrices[[metric]], metric)
 }
+
+# MINIMAL ADDITION 2: After running ITS analysis, save the plots with specific names  
+barplot_ITS_wunifrac <- barplot_wunifrac
+heatmap_ITS_wunifrac <- heatmap_wunifrac

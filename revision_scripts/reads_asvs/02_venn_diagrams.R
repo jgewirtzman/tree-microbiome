@@ -168,5 +168,13 @@ p4 <- ggvenn(asvs_rarefied_its,
 final_venn_plot <- (p1 + p2) / (p3 + p4)
 print(final_venn_plot)
 
+# Save as A4 size .tif (210 x 297 mm = 8.27 x 11.69 inches)
+ggsave("venn_diagram.tif", 
+       plot = final_venn_plot,
+       width = 12, 
+       height = 12, 
+       units = "in",
+       dpi = 600)
+
 # Save processed data for subsequent scripts
 #save(ps_filtered, ps_rarefied, ps_filtered_its, ps_rarefied_its,      metadata, metadata_its, file = "2_venn_workspace.RData")
