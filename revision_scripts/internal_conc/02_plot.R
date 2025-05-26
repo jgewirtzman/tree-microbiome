@@ -142,7 +142,7 @@ ggsave("internal_conc_plot.svg", combined_plot, width = 5*1.5, height = 2.67*1.5
 
 
 # Add the label "j" in the top left
-ic_plot <- plot_grid(combined_plot, labels = "j", label_size = 14, label_x = 0.00, label_y = 0.95, hjust = 0, vjust = 1)
+ic_plot <- plot_grid(combined_plot, labels = "i", label_size = 14, label_x = 0.00, label_y = 0.95, hjust = 0, vjust = 1)
 
 # Display the plot
 ic_plot
