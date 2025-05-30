@@ -1,0 +1,7 @@
+"Dataset","Variable","N1","N2","Normal_Group1","Normal_Group2","Equal_Var_P","Recommendation"
+"pmoA Gene Abundance","pmoa_loose",156,150,0,0,0.0445,"either_clt"
+"mcrA Gene Abundance","mcra_probe_loose",154,149,0,0,0.0042,"either_clt"
+"Methanotrophy Function","methanotrophy",133,118,0,0,0.0029,"either_clt"
+"Hydrogenotrophic Methanogenesis","hydrogenotrophic_methanogenesis",133,118,0,0,2e-04,"either_clt"
+"Aerobic Chemoheterotrophy","aerobic_chemoheterotrophy",133,118,0,0,0.1712,"either_clt"
+"Fermentation","fermentation",133,118,0,0,2e-04,"either_clt"
