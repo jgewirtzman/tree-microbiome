@@ -1,1 +1,2 @@
 Black Oak/ITS/ add .gitattributes .gitignore
+16S/ rm --cached -r Black Oak/ITS/
