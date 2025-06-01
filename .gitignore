@@ -1,3 +1,7 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9859fc9a91a652522c0bc50afb66daa6efb2d9cba29df5b0c19aa2bdb4d94ba0
-size 50
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.DS_Store
+ITS/
+Black Oak/16S/
