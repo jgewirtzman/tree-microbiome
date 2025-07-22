@@ -73,15 +73,17 @@ create_facet_with_inset <- function(species_data) {
       breaks = seq(0, ceiling(max(log10(pmax(species_data$heartwood, 1, na.rm = TRUE)), 
                                   log10(pmax(species_data$sapwood, 1, na.rm = TRUE)))), 1)
     ) +
+    labs(x = expression(log[10] * " " * CH[4] * " (ppm)"), y = "Trees (Ranked)") +
     theme_classic(base_size = 8) +
     theme(
-      axis.title = element_blank(),
-      axis.text = element_text(size = 8),
+      axis.title.x = element_blank(),       # Remove x-axis title
+      axis.title.y = element_text(size = 7), # Keep y-axis title
+      axis.text.y = element_text(size = 7),   # Keep y-axis text/numbers
+      axis.text.x = element_blank(),        # Remove x-axis text/numbers
+      axis.ticks.x = element_blank(),       # Remove x-axis ticks
       plot.margin = margin(2, 2, 2, 2),
       plot.background = element_rect(fill = "white", color = "grey30", size = 1),
-      panel.background = element_rect(fill = "white", color = NA),
-      axis.ticks.x = element_blank(),
-      axis.text.x = element_blank()
+      panel.background = element_rect(fill = "white", color = NA)
     ) + coord_flip()
   
   base_plot + inset_element(inset_plot, left = 0.5, bottom = 0.25, right = 1, top = 1)
