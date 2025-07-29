@@ -214,6 +214,49 @@ tree_plot <- ggtree(tree_scenario1) %<+% distance_data +
 # Display the plot
 print(tree_plot)
 
+
+# Function to rank based on rounded distances with tie-breaking
+create_viridis_palette_rounded <- function(data) {
+  names(data) <- gsub("_", " ", names(data))
+  
+  # Round distances to nearest 0.01 (2 decimal places)
+  rounded_distances <- round(as.numeric(data), 2)
+  
+  df <- data.frame(Species = names(data), 
+                   Original = as.numeric(data),
+                   Rounded = rounded_distances)
+  
+  # Order by rounded distance, then reverse alphabetically for ties
+  ordered_species <- df$Species[order(df$Rounded, -xtfrm(df$Species))]
+  
+  # Generate color palette with this ordering
+  color_palette <- setNames(viridis(length(data)), ordered_species)
+  
+  # Print for debugging
+  print("Rounded distances and ordering:")
+  print(df[order(df$Rounded, -xtfrm(df$Species)), ])
+  
+  return(color_palette)
+}
+
+# Use the rounded distance function
+data <- setNames(distance_data$distance, distance_data$species)
+color_palette_phylo <- create_viridis_palette_rounded(data)
+
+# Assign colors
+distance_data$color <- color_palette_phylo[distance_data$species]
+
+# Create the tree plot
+tree_plot <- ggtree(tree_scenario1) %<+% distance_data +
+  geom_tiplab(aes(color = I(color)), fontface="bold") +
+  geom_tippoint(aes(color = I(color)), size = 2) +
+  theme_tree2() +
+  theme(legend.position = "top") +
+  ggplot2::xlim(0, 450)
+
+print(tree_plot)
+
 library(svglite)
 # Save the plot with a wider aspect ratio
 ggsave("wide_tree_plot.svg", tree_plot, width = 7, height = 3, units = "in")
+
