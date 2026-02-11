@@ -139,7 +139,8 @@ Example dataset processing times vary depending on system specifications. For qu
 
 If you use this code or data, please cite:
 
-**Manuscript:** "A diverse and distinct microbiome inside living trees" (Manuscript #2024-05-11045B)
+Arnold, W., Gewirtzman, J., Raymond, P.A., Duguid, M.C., Brodersen, C.R., Brown, C., Norbraten, N., Wood, Q.T.V., Bradford, M.A. & Peccia, J. (2025). A diverse and distinct microbiome inside living trees. Nature, 644(8078), 1039–1048. https://doi.org/10.1038/s41586-025-09316-0
+
 
 **Data:** Available at [Figshare dataset](https://figshare.com/s/b781d3c5c24f1089ed5d?)
 
