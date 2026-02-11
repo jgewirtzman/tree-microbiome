@@ -131,9 +131,6 @@ tree-microbiome/
 3. **Visualize and Interpret Results:**
    - Check `outputs/` for plots, heatmaps, and statistical summaries
 
-## Demo
-
-Example dataset processing times vary depending on system specifications. For questions or support, contact the repository maintainers.
 
 ## Citation
 
