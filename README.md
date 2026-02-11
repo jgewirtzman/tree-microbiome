@@ -143,6 +143,9 @@ If you use this code or data, please cite:
 
 **Data:** Available at [Figshare dataset](https://figshare.com/s/b781d3c5c24f1089ed5d?)
 
+### Raw Sequence Data
+Raw amplicon sequencing data (16S and ITS) are publicly available on NCBI's Sequence Read Archive (SRA) under BioProject [PRJNA1124946](https://www.ncbi.nlm.nih.gov/bioproject/PRJNA1124946) (1,234 SRA accessions, 2,467 BioSamples).
+
 ## License
 
 This project is open-source and available under the MIT License.
