@@ -7,6 +7,13 @@ This repository contains scripts and datasets for analyzing microbial communitie
 
 **Important:** The large sequencing data files are hosted on Figshare due to their size. You'll need to download them separately before running the analysis scripts.
 
+## Sample inventory
+
+For a consolidated sample inventory across SRA, the DADA2 pipeline, and the
+published analysis tables — including a sample naming guide and species-code
+lookup — see [`master_sample_inventory.csv`](master_sample_inventory.csv) and
+[`SAMPLE_INVENTORY_README.md`](SAMPLE_INVENTORY_README.md).
+
 ### Required Data Download
 
 1. **Visit the Figshare dataset:**
